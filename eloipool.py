@@ -217,10 +217,14 @@ def submitGotwork(info):
 		checkShare.logger.warning('Failed to submit gotwork\n' + traceback.format_exc())
 
 def clampTarget(target, DTMode):
-	# ShareTarget is the minimum
-	if target is None or target > config.ShareTarget / 64:
-		target = config.ShareTarget / 64
-	
+	if config.scrypt:
+		# ShareTarget is the minimum
+		if target is None or target > config.ShareTarget:
+			target = config.ShareTarget / 16
+	else:
+		if target is None or target > config.ShareTarget / 64:
+			target = config.ShareTarget / 64
+
 	# Never target above the network, as we'd lose blocks
 	if target < networkTarget:
 		target = networkTarget
