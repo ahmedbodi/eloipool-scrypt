@@ -18,6 +18,7 @@ import bitcoin.script
 from .varlen import varlenDecode, varlenEncode
 from util import dblsha
 from struct import pack, unpack
+import config
 
 _nullprev = b'\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0'
 
@@ -31,6 +32,8 @@ class Txn:
 	def new(cls):
 		o = cls()
 		o.version = 1
+		if config.PoS:
+		    o.timestamp = 0
 		o.inputs = []
 		o.outputs = []
 		o.locktime = 0
@@ -42,6 +45,9 @@ class Txn:
 			sigScript = bitcoin.script.encodeUNum(height) + sigScript
 		self.inputs = ( ((_nullprev, 0xffffffff), sigScript, seqno), )
 	
+	def setTimestamp(self, timestamp)
+		self.timestamp = timestamp
+
 	def addInput(self, prevout, sigScript, seqno = 0xffffffff):
 		self.inputs.append( (prevout, sigScript, seqno) )
 	
@@ -50,14 +56,23 @@ class Txn:
 	
 	def disassemble(self, retExtra = False):
 		self.version = unpack('<L', self.data[:4])[0]
-		rc = [4]
+		if config.PoS:
+			self.timestamp = unpack('<L', self.data[4:8])[0]
+			rc = [8]
+		else:
+			rc = [4]
 		
 		(inputCount, data) = varlenDecode(self.data[4:], rc)
 		inputs = []
 		for i in range(inputCount):
-			prevout = (data[:32], unpack('<L', data[32:36])[0])
-			rc[0] += 36
-			(sigScriptLen, data) = varlenDecode(data[36:], rc)
+			if config.PoS:
+				prevout = (data[:36], unpack('<L', data[36:40])[0])
+				rc[0] += 40
+				(sigScriptLen, data) = varlenDecode(data[40:], rc)
+			else:
+				prevout = (data[:32], unpack('<L', data[32:36])[0])
+				rc[0] += 36
+				(sigScriptLen, data) = varlenDecode(data[36:], rc)
 			sigScript = data[:sigScriptLen]
 			seqno = unpack('<L', data[sigScriptLen:sigScriptLen + 4])[0]
 			data = data[sigScriptLen + 4:]
@@ -95,7 +110,8 @@ class Txn:
 	
 	def assemble(self):
 		data = pack('<L', self.version)
-		
+		data += pack('<L', self.timestamp)
+	
 		inputs = self.inputs
 		data += varlenEncode(len(inputs))
 		for prevout, sigScript, seqno in inputs:
@@ -117,30 +133,3 @@ class Txn:
 	def idhash(self):
 		self.txid = dblsha(self.data)
 
-# Txn tests
-def _test():
-	d = b'\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-	t = Txn(d)
-	assert t.txid == b"C\xeczW\x9fUa\xa4*~\x967\xadAVg'5\xa6X\xbe'R\x18\x18\x01\xf7#\xba3\x16\xd2"
-	t.disassemble()
-	t.assemble()
-	assert t.data == d
-	assert not t.isCoinbase()
-	t = Txn.new()
-	t.addInput((b' '*32, 0), b'INPUT')
-	t.addOutput(0x10000, b'OUTPUT')
-	t.assemble()
-	assert t.txid == b'>`\x97\xecu\x8e\xb5\xef\x19k\x17d\x96sw\xb1\xf1\x9bO\x1c6\xa0\xbe\xf7N\xed\x13j\xfdHF\x1a'
-	t.disassemble()
-	t.assemble()
-	assert t.txid == b'>`\x97\xecu\x8e\xb5\xef\x19k\x17d\x96sw\xb1\xf1\x9bO\x1c6\xa0\xbe\xf7N\xed\x13j\xfdHF\x1a'
-	assert not t.isCoinbase()
-	t = Txn.new()
-	t.setCoinbase(b'COINBASE')
-	t.addOutput(0x10000, b'OUTPUT')
-	assert t.isCoinbase()
-	assert t.getCoinbase() == b'COINBASE'
-	t.assemble()
-	assert t.txid == b'n\xb9\xdc\xef\xe9\xdb(R\x8dC~-\xef~\x88d\x15+X\x13&\xb7\xbc$\xb1h\xf3g=\x9b~V'
-
-_test()

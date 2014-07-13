@@ -3,6 +3,10 @@
 # Name of the server
 ServerName = 'LTCMine.ru'
 
+### Settings related to the Coin
+Scrypt = True
+PoS = True
+
 ### Settings relating to server scaling/load
 
 # Share hashes must be below this to be valid shares

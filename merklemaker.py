@@ -45,6 +45,8 @@ def assembleBlock(blkhdr, txlist):
 	payload += varlenEncode(len(txlist))
 	for tx in txlist:
 		payload += tx.data
+	if config.PoS:
+	   payload += b'\0'
 	return payload
 
 class merkleMaker(threading.Thread):
@@ -110,6 +112,8 @@ class merkleMaker(threading.Thread):
 	
 	def createClearMerkleTree(self, height):
 		subsidy = 5000000000 >> (height // 840000)
+		if config.PoS:
+			subsidy = self.access.getsubsidy()
 
 		cbtxn = self.makeCoinbaseTxn(subsidy, False)
 		cbtxn.assemble()
@@ -317,6 +321,8 @@ class merkleMaker(threading.Thread):
 		self._makeBlockSafe(MP, txnlist, txninfo)
 		
 		cbtxn = self.makeCoinbaseTxn(MP['coinbasevalue'])
+		if config.PoS:
+		   cbtxn = self.makeCoinbaseTxn(MP['coinbasevalue'], MP['curtime'])
 		cbtxn.setCoinbase(b'\0\0')
 		cbtxn.assemble()
 		txnlist.insert(0, cbtxn.data)
@@ -529,60 +535,3 @@ class merkleMaker(threading.Thread):
 		rollPrevBlk = (mt == self.curClearMerkleTree)
 		return (height, mt, cb, prevBlock, bits, rollPrevBlk)
 
-# merkleMaker tests
-def _test():
-	global now
-	now = 1337039788
-	MM = merkleMaker()
-	reallogger = MM.logger
-	class fakelogger:
-		LO = False
-		def critical(self, *a):
-			if self.LO > 1: return
-			reallogger.critical(*a)
-		def warning(self, *a):
-			if self.LO: return
-			reallogger.warning(*a)
-		def debug(self, *a):
-			pass
-	MM.logger = fakelogger()
-	class NMTClass:
-		pass
-	
-	# _makeBlockSafe tests
-	from copy import deepcopy
-	MP = {
-		'coinbasevalue':50,
-	}
-	txnlist = [b'\0', b'\x01', b'\x02']
-	txninfo = [{'fee':0, 'sigops':1}, {'fee':5, 'sigops':10000}, {'fee':0, 'sigops':10001}]
-	def MBS(LO = 0):
-		m = deepcopy( (MP, txnlist, txninfo) )
-		MM.logger.LO = LO
-		try:
-			MM._makeBlockSafe(*m)
-		except:
-			if LO < 2:
-				raise
-		else:
-			assert LO < 2  # An expected error wasn't thrown
-		if 'POTInfo' in m[0]:
-			del m[0]['POTInfo']
-		return m
-	MM.POT = 0
-	assert MBS() == (MP, txnlist[:2], txninfo[:2])
-	txninfo[2]['fee'] = 1
-	MPx = deepcopy(MP)
-	MPx['coinbasevalue'] -= 1
-	assert MBS() == (MPx, txnlist[:2], txninfo[:2])
-	txninfo[2]['sigops'] = 1
-	assert MBS(1) == (MP, txnlist, txninfo)
-	# APOT tests
-	MM.POT = 2
-	txnlist.append(b'\x03')
-	txninfo.append({'fee':1, 'sigops':0})
-	MPx = deepcopy(MP)
-	MPx['coinbasevalue'] -= 1
-	assert MBS() == (MPx, txnlist[:3], txninfo[:3])
-
-_test()
